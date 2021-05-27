@@ -15,8 +15,6 @@ var (
 	pollInterval        time.Duration
 	scaleDownCoolPeriod time.Duration
 	scaleUpCoolPeriod   time.Duration
-	scaleUpMessages     int
-	scaleDownMessages   int
 	scaleUpPods         int
 	scaleDownPods       int
 	maxPods             int
@@ -28,7 +26,7 @@ var (
 	kubernetesNamespace      string
 )
 
-func Run(p *scale.PodAutoScaler, sqs *kubesqs.SqsClient) {
+func Run(pod *scale.PodAutoScaler, sqs *kubesqs.SqsClient) {
 	ctx := context.Background()
 	lastScaleUpTime := time.Now()
 	lastScaleDownTime := time.Now()
@@ -42,13 +40,20 @@ func Run(p *scale.PodAutoScaler, sqs *kubesqs.SqsClient) {
 			continue
 		}
 
-		if numMessages >= scaleUpMessages {
+		currentReplicas, err := pod.CurrentReplicas(ctx)
+		if err != nil {
+			log.Errorf("Failed to get current replica count: %v", err)
+			continue
+		}
+
+		log.Info("NumMessages: %v; Current Replicas: %v", numMessages, *currentReplicas)
+		if numMessages > *currentReplicas {
 			if lastScaleUpTime.Add(scaleUpCoolPeriod).After(time.Now()) {
 				log.Info("Waiting for cool down, skipping scale up ")
 				continue
 			}
 
-			if err := p.ScaleUp(ctx); err != nil {
+			if err := pod.ScaleTo(ctx, numMessages); err != nil {
 				log.Errorf("Failed scaling up: %v", err)
 				continue
 			}
@@ -56,13 +61,13 @@ func Run(p *scale.PodAutoScaler, sqs *kubesqs.SqsClient) {
 			lastScaleUpTime = time.Now()
 		}
 
-		if numMessages <= scaleDownMessages {
+		if numMessages < *currentReplicas {
 			if lastScaleDownTime.Add(scaleDownCoolPeriod).After(time.Now()) {
 				log.Info("Waiting for cool down, skipping scale down")
 				continue
 			}
 
-			if err := p.ScaleDown(ctx); err != nil {
+			if err := pod.ScaleTo(ctx, numMessages); err != nil {
 				log.Errorf("Failed scaling down: %v", err)
 				continue
 			}
@@ -70,15 +75,12 @@ func Run(p *scale.PodAutoScaler, sqs *kubesqs.SqsClient) {
 			lastScaleDownTime = time.Now()
 		}
 	}
-
 }
 
 func main() {
 	flag.DurationVar(&pollInterval, "poll-period", 5*time.Second, "The interval in seconds for checking if scaling is required")
-	flag.DurationVar(&scaleDownCoolPeriod, "scale-down-cool-down", 30*time.Second, "The cool down period for scaling down")
+	flag.DurationVar(&scaleDownCoolPeriod, "scale-down-cool-down", 2*time.Minute, "The cool down period for scaling down")
 	flag.DurationVar(&scaleUpCoolPeriod, "scale-up-cool-down", 10*time.Second, "The cool down period for scaling up")
-	flag.IntVar(&scaleUpMessages, "scale-up-messages", 100, "Number of sqs messages queued up required for scaling up")
-	flag.IntVar(&scaleDownMessages, "scale-down-messages", 10, "Number of messages required to scaling down")
 	flag.IntVar(&scaleUpPods, "scale-up-pods", 1, "Number of Pod in scaling up")
 	flag.IntVar(&scaleDownPods, "scale-down-pods", 1, "Number of Pod in scaling down")
 	flag.IntVar(&maxPods, "max-pods", 5, "Max pods that kube-sqs-autoscaler can scale")

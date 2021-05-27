@@ -51,57 +51,49 @@ func NewPodAutoScaler(kubernetesDeploymentName string, kubernetesNamespace strin
 	}
 }
 
-func (p *PodAutoScaler) ScaleUp(ctx context.Context) error {
+func (pod *PodAutoScaler) CurrentReplicas(ctx context.Context) (*int32, error) {
+	deployment, err := pod.Client.Get(ctx, pod.Deployment, metav1.GetOptions{})
+	if err != nil {
+		var currentReplicas *int32
+		return currentReplicas, errors.Wrap(err, "Failed to get deployment from kube server, no scale up occured")
+	}
+
+	return deployment.Spec.Replicas, nil
+}
+
+func (p *PodAutoScaler) ScaleTo(ctx context.Context, targetReplicaCount int32) error {
 	deployment, err := p.Client.Get(ctx, p.Deployment, metav1.GetOptions{})
 	if err != nil {
-		return errors.Wrap(err, "Failed to get deployment from kube server, no scale up occured")
+		return errors.Wrap(err, "Failed to get deployment from kube server, no scale to occured")
 	}
 
 	currentReplicas := deployment.Spec.Replicas
 
-	if *currentReplicas >= int32(p.Max) {
+	if targetReplicaCount >= *currentReplicas && *currentReplicas > int32(p.Max) {
 		log.Infof("More than max pods running. No scale up. Replicas: %d", *deployment.Spec.Replicas)
 		return nil
 	}
-	nextReplicas := *currentReplicas + int32(p.ScaleUpPods)
-	if nextReplicas > int32(p.Max) {
-		nextReplicas = int32(p.Max)
-	}
-	deployment.Spec.Replicas = &nextReplicas
 
-	_, err = p.Client.Update(ctx, deployment, metav1.UpdateOptions{})
-	if err != nil {
-		return errors.Wrap(err, "Failed to scale up")
-	}
-
-	log.Infof("Scale up successful. Replicas: %d", *deployment.Spec.Replicas)
-	return nil
-}
-
-func (p *PodAutoScaler) ScaleDown(ctx context.Context) error {
-	deployment, err := p.Client.Get(ctx, p.Deployment, metav1.GetOptions{})
-	if err != nil {
-		return errors.Wrap(err, "Failed to get deployment from kube server, no scale down occured")
-	}
-
-	currentReplicas := deployment.Spec.Replicas
-
-	if *currentReplicas <= int32(p.Min) {
+	if targetReplicaCount <= *currentReplicas && *currentReplicas < int32(p.Min) {
 		log.Infof("Less than min pods running. No scale down. Replicas: %d", *deployment.Spec.Replicas)
 		return nil
 	}
 
-	nextReplicas := *currentReplicas - int32(p.ScaleDownPods)
-	if nextReplicas < int32(p.Min) {
-		nextReplicas = int32(p.Min)
+	if targetReplicaCount > int32(p.Max) {
+		targetReplicaCount = int32(p.Max)
 	}
-	deployment.Spec.Replicas = &nextReplicas
+
+	if targetReplicaCount < int32(p.Min) {
+		targetReplicaCount = int32(p.Min)
+	}
+
+	deployment.Spec.Replicas = &targetReplicaCount
 
 	_, err = p.Client.Update(ctx, deployment, metav1.UpdateOptions{})
 	if err != nil {
-		return errors.Wrap(err, "Failed to scale down")
+		return errors.Wrap(err, "Failed to scale to desired target")
 	}
 
-	log.Infof("Scale down successful. Replicas: %d", *deployment.Spec.Replicas)
+	log.Infof("Scaled to target successfully. Replicas: %d", *deployment.Spec.Replicas)
 	return nil
 }

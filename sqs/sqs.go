@@ -29,7 +29,7 @@ func NewSqsClient(queue string, region string) *SqsClient {
 	}
 }
 
-func (s *SqsClient) NumMessages() (int, error) {
+func (s *SqsClient) NumMessages() (int32, error) {
 	params := &sqs.GetQueueAttributesInput{
 		AttributeNames: []*string{
 			aws.String("ApproximateNumberOfMessages"),
@@ -60,5 +60,5 @@ func (s *SqsClient) NumMessages() (int, error) {
 
 	messages := approximateNumberOfMessages + approximateNumberOfMessagesDelayed + approximateNumberOfMessagesNotVisible
 
-	return messages, nil
+	return int32(messages), nil
 }

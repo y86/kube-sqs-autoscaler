@@ -21,6 +21,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: kube-sqs-autoscaler
+  namespace: TARGET_DEPLOYMENT_NAMESPACE
   labels:
     app: kube-sqs-autoscaler
 spec:
@@ -32,10 +33,12 @@ spec:
     metadata:
       labels:
         app: kube-sqs-autoscaler
+      annotations:
+        iam.amazonaws.com/role: arn:aws:iam::AWS_ACCOUNT:role/SQS_ACCESS_POLICY
     spec:
       containers:
       - name: kube-sqs-autoscaler
-        image: irotoris/kube-sqs-autoscaler:v2.1.0
+        image: public.ecr.aws/brobot-ecr/kube-sqs-autoscaler:2.1.1
         command:
           - /kube-sqs-autoscaler
           - --sqs-queue-url=https://sqs.your_aws_region.amazonaws.com/your_aws_account_number/your_queue_name  # required
@@ -45,10 +48,6 @@ spec:
           - --poll-period=5s # optional
           - --scale-down-cool-down=30s # optional
           - --scale-up-cool-down=5m # optional
-          - --scale-up-messages=100 # optional
-          - --scale-down-messages=10 # optional
-          - --scale-up-pods=1 # optional
-          - --scale-down-pods=1 # optional
           - --max-pods=5 # optional
           - --min-pods=1 # optional
         env:

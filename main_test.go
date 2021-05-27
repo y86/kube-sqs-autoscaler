@@ -22,16 +22,14 @@ func TestRunReachMinReplicas(t *testing.T) {
 	pollInterval = 1 * time.Second
 	scaleDownCoolPeriod = 1 * time.Second
 	scaleUpCoolPeriod = 1 * time.Second
-	scaleUpMessages = 100
-	scaleDownMessages = 3
-	maxPods = 5
-	minPods = 1
+	maxPods = 50
+	minPods = 4
 	awsRegion = "us-east-1"
 
 	sqsQueueUrl = "example.com"
 	kubernetesDeploymentName = "deploy"
 	kubernetesNamespace = "namespace"
-	initPods := 3
+	initPods := 5
 	p := NewMockPodAutoScaler(kubernetesDeploymentName, kubernetesNamespace, maxPods, minPods, initPods, 1, 1)
 	s := NewMockSqsClient()
 
@@ -59,8 +57,6 @@ func TestRunReachMaxReplicas(t *testing.T) {
 	pollInterval = 1 * time.Second
 	scaleDownCoolPeriod = 1 * time.Second
 	scaleUpCoolPeriod = 1 * time.Second
-	scaleUpMessages = 300
-	scaleDownMessages = 10
 	maxPods = 5
 	minPods = 1
 	awsRegion = "us-east-1"
@@ -90,13 +86,46 @@ func TestRunReachMaxReplicas(t *testing.T) {
 	assert.Equal(t, int32(maxPods), *deployment.Spec.Replicas, "Number of replicas should be the max")
 }
 
+func TestRunShouldReachTarget(t *testing.T) {
+	ctx := context.Background()
+	// override default vars for testing
+	pollInterval = 1 * time.Second
+	scaleDownCoolPeriod = 1 * time.Second
+	scaleUpCoolPeriod = 1 * time.Second
+	maxPods = 500
+	minPods = 1
+	awsRegion = "us-east-1"
+
+	sqsQueueUrl = "example.com"
+	kubernetesDeploymentName = "deploy"
+	kubernetesNamespace = "namespace"
+	initPods := 3
+	p := NewMockPodAutoScaler(kubernetesDeploymentName, kubernetesNamespace, maxPods, minPods, initPods, 1, 1)
+	s := NewMockSqsClient()
+
+	go Run(p, s)
+
+	Attributes := map[string]*string{
+		"ApproximateNumberOfMessages":           aws.String("100"),
+		"ApproximateNumberOfMessagesDelayed":    aws.String("100"),
+		"ApproximateNumberOfMessagesNotVisible": aws.String("100"),
+	}
+
+	input := &sqs.SetQueueAttributesInput{
+		Attributes: Attributes,
+	}
+	_, _ = s.Client.SetQueueAttributes(input)
+
+	time.Sleep(10 * time.Second)
+	deployment, _ := p.Client.Get(ctx, "deploy", metav1.GetOptions{})
+	assert.Equal(t, int32(300), *deployment.Spec.Replicas, "Number of replicas should be the max")
+}
+
 func TestRunScaleUpCoolDown(t *testing.T) {
 	ctx := context.Background()
 	pollInterval = 5 * time.Second
 	scaleDownCoolPeriod = 10 * time.Second
 	scaleUpCoolPeriod = 10 * time.Second
-	scaleUpMessages = 300
-	scaleDownMessages = 10
 	maxPods = 5
 	minPods = 1
 	awsRegion = "us-east-1"
@@ -123,7 +152,7 @@ func TestRunScaleUpCoolDown(t *testing.T) {
 
 	time.Sleep(15 * time.Second)
 	deployment, _ := p.Client.Get(ctx, "deploy", metav1.GetOptions{})
-	assert.Equal(t, int32(4), *deployment.Spec.Replicas, "Number of replicas should be 4 if cool down for scaling up was obeyed")
+	assert.Equal(t, int32(maxPods), *deployment.Spec.Replicas, "Number of replicas should be 5 (maxPods) if cool down for scaling up was obeyed")
 }
 
 func TestRunScaleDownCoolDown(t *testing.T) {
@@ -131,9 +160,7 @@ func TestRunScaleDownCoolDown(t *testing.T) {
 	pollInterval = 5 * time.Second
 	scaleDownCoolPeriod = 10 * time.Second
 	scaleUpCoolPeriod = 10 * time.Second
-	scaleUpMessages = 100
-	scaleDownMessages = 3
-	maxPods = 5
+	maxPods = 50
 	minPods = 1
 	awsRegion = "us-east-1"
 
@@ -159,7 +186,7 @@ func TestRunScaleDownCoolDown(t *testing.T) {
 
 	time.Sleep(15 * time.Second)
 	deployment, _ := p.Client.Get(ctx, "deploy", metav1.GetOptions{})
-	assert.Equal(t, int32(2), *deployment.Spec.Replicas, "Number of replicas should be 2 if cool down for scaling down was obeyed")
+	assert.Equal(t, int32(3), *deployment.Spec.Replicas, "Number of replicas should be 3 if cool down for scaling down was obeyed")
 }
 
 func TestRunReachMinReplicasWithScaleingPodNum(t *testing.T) {
@@ -167,10 +194,8 @@ func TestRunReachMinReplicasWithScaleingPodNum(t *testing.T) {
 	pollInterval = 1 * time.Second
 	scaleDownCoolPeriod = 1 * time.Second
 	scaleUpCoolPeriod = 1 * time.Second
-	scaleUpMessages = 100
-	scaleDownMessages = 3
 	maxPods = 100
-	minPods = 1
+	minPods = 10
 	scaleUpPods = 100
 	scaleDownPods = 100
 	awsRegion = "us-east-1"
@@ -205,8 +230,6 @@ func TestRunReachMaxReplicasWithScaleingPodNum(t *testing.T) {
 	pollInterval = 1 * time.Second
 	scaleDownCoolPeriod = 1 * time.Second
 	scaleUpCoolPeriod = 1 * time.Second
-	scaleUpMessages = 100
-	scaleDownMessages = 3
 	maxPods = 100
 	minPods = 1
 	scaleUpPods = 100
