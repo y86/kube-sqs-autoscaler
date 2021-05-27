@@ -46,7 +46,7 @@ func Run(pod *scale.PodAutoScaler, sqs *kubesqs.SqsClient) {
 			continue
 		}
 
-		log.Info("NumMessages: %v; Current Replicas: %v", numMessages, *currentReplicas)
+		log.Infof("NumMessages: %v; Current Replicas: %v", numMessages, *currentReplicas)
 		if numMessages > *currentReplicas {
 			if lastScaleUpTime.Add(scaleUpCoolPeriod).After(time.Now()) {
 				log.Info("Waiting for cool down, skipping scale up ")
